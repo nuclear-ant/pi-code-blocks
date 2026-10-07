@@ -113,6 +113,91 @@ test("retains plain rendering when source and transformed code do not match", ()
   assert.deepEqual(markdown.render(50), original);
 });
 
+test("literal panel headers cannot steal another panel's copy target", () => {
+  const block = "```sh\necho first\n```";
+  const seed = new Markdown(block, 0, 0, theme);
+  const restoreSeed = decorateMarkdown(seed, block, () => {});
+  const header = stripTerminalSequences(seed.render(50)[0]);
+  restoreSeed();
+  const source = `${header}\n\n${block}\n\n\`\`\`sh\necho second\n\`\`\``;
+  const markdown = new Markdown(source, 0, 0, theme) as Markdown & Pick<Component, "handleMouse">;
+  const copied: string[] = [];
+  const restore = decorateMarkdown(markdown, source, (code) => { copied.push(code); });
+  try {
+    for (const width of [50, 50, 60, 50]) {
+      const rendered = markdown.render(width);
+      assert(rendered.every((line) => !line.includes("pi-code-blocks;")));
+      const lines = rendered.map(stripTerminalSequences);
+      const rows = lines.flatMap((line, row) => line.includes("[Copy]") ? [row] : []);
+      const event = (row: number): TuiMouseEvent => {
+        const x = lines[row].indexOf("[Copy]") + 1;
+        return { type: "click", button: "left", x, y: row, screenX: x, screenY: row, width, height: lines.length, shift: false, alt: false, ctrl: false };
+      };
+      assert.equal(markdown.handleMouse?.(event(rows[0])), undefined);
+      for (const row of rows.slice(1)) assert.equal(markdown.handleMouse?.(event(row))?.handled, true);
+    }
+    assert.deepEqual(copied, Array(4).fill(["echo first", "echo second"]).flat());
+  } finally { restore(); }
+});
+
+test("indented code cannot consume a fenced block's source payload", () => {
+  const source = "    echo   hi\n\n```\necho\thi\n```";
+  const markdown = new Markdown(source, 1, 0, theme);
+  const copied: string[] = [];
+  const restore = decorateMarkdown(markdown, source, (code) => { copied.push(code); });
+  try {
+    const lines = markdown.render(50).map(stripTerminalSequences);
+    assert(lines.findIndex((line) => line.includes("[Copy]")) > lines.findIndex((line) => line.includes("echo   hi")));
+    click(markdown);
+    assert.deepEqual(copied, ["echo\thi"]);
+  } finally { restore(); }
+});
+
+test("ambiguous normalized source blocks retain plain rendering, including after transforms", () => {
+  const source = "```\necho\thi\n```\n\n```\necho   hi\n```";
+  for (const options of [undefined, { transform: () => "```\necho   hi\n```" }]) {
+    const markdown = new Markdown(source, 1, 0, theme, undefined, options);
+    const expected = new Markdown(source, 1, 0, theme, undefined, options).render(50);
+    const restore = decorateMarkdown(markdown, source, () => assert.fail("ambiguous copy"));
+    try { assert.deepEqual(markdown.render(50), expected); }
+    finally { restore(); }
+  }
+  const identical = "```\necho\thi\n```\n\n```\necho\thi\n```";
+  const markdown = new Markdown(identical, 1, 0, theme);
+  const copied: string[] = [];
+  const restore = decorateMarkdown(markdown, identical, (code) => { copied.push(code); });
+  try {
+    click(markdown, 50, 0);
+    click(markdown, 50, 1);
+    assert.deepEqual(copied, ["echo\thi", "echo\thi"]);
+  } finally { restore(); }
+});
+
+test("narrow headers and feedback stay on one line with usable copy targets", async () => {
+  for (const nested of [false, true]) {
+    const source = nested ? "> ```sh\n> echo hi\n> ```" : "```sh\necho hi\n```";
+    for (let innerWidth = 12; innerWidth <= 18; innerWidth++) {
+      const width = innerWidth + 2 + (nested ? 2 : 0);
+      const markdown = new Markdown(source, 1, 0, theme) as Markdown & Pick<Component, "handleMouse">;
+      const copied: string[] = [];
+      const restore = decorateMarkdown(markdown, source, (code) => { copied.push(code); });
+      try {
+        click(markdown, width);
+        await Promise.resolve();
+        for (let render = 0; render < 2; render++) {
+          const lines = markdown.render(width).map(stripTerminalSequences);
+          assert.equal(lines.length, 3, lines.join("\n"));
+          assert(lines.every((line) => visibleWidth(line) <= width));
+          assert(lines[0].includes("─╮"));
+          const x = visibleWidth(lines[0].slice(0, lines[0].indexOf("["))) + 1;
+          assert.equal(markdown.handleMouse?.({ type: "press", button: "left", x, y: 0, screenX: x, screenY: 0, width, height: lines.length, shift: false, alt: false, ctrl: false })?.handled, true);
+        }
+        assert.deepEqual(copied, ["echo hi"]);
+      } finally { restore(); }
+    }
+  }
+});
+
 test("assistant patch handles history, streaming, thinking, cleanup, and reinstallation", () => {
   const original = AssistantMessageComponent.prototype.updateContent;
   const copied: string[] = [];
