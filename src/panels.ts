@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   Markdown, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi,
   type Component, type MarkdownTheme, type Token, type Tokens, type TuiMouseEvent,
@@ -12,7 +13,7 @@ interface MarkdownInternals {
 }
 
 interface Button {
-  header: string;
+  marker: string;
   start: number;
   end: number;
   block: CodeBlock;
@@ -25,6 +26,7 @@ export function decorateMarkdown(markdown: Markdown, source: string, copy: (code
     throw new Error("Unsupported Pi Markdown renderer");
   }
   const blocks = sourceBlocks(source);
+  const markerPrefix = `\x1b_pi-code-blocks;${randomUUID()};`;
   const originalToken = internal.renderToken;
   const originalRender = markdown.render;
   const originalMouse = target.handleMouse;
@@ -57,20 +59,25 @@ export function decorateMarkdown(markdown: Markdown, source: string, copy: (code
   internal.renderToken = function (token, width, nextType, style) {
     if (token.type !== "code" || width < 12) return originalToken.call(this, token, width, nextType, style);
     const code = token as Tokens.Code;
-    const block = blocks.find((block) => !used.has(block) && block.language === (code.lang ?? "") && block.code.replaceAll("\t", "   ") === code.text);
-    if (!block) return originalToken.call(this, token, width, nextType, style);
+    if (!/^ {0,3}(`{3,}|~{3,})/.test(code.raw)) return originalToken.call(this, token, width, nextType, style);
+    const matches = blocks.filter((block) => block.language === (code.lang ?? "") && block.code.replaceAll("\t", "   ") === code.text);
+    const block = matches.find((block) => !used.has(block));
+    // Rendering expands tabs, so different source payloads can look identical.
+    if (!block || matches.some((match) => match.code !== block.code)) return originalToken.call(this, token, width, nextType, style);
     used.add(block);
-    const buttonWidth = Math.min(10, width - 6);
     const gap = width > 12 ? " " : "";
+    const buttonWidth = Math.min(10, width - 6 - gap.length);
     const label = stripTerminalSequences(truncateToWidth(stripTerminalSequences(block.language.split(/\s/)[0] || "code"), Math.max(0, width - buttonWidth - 7 - gap.length)));
     const left = `╭─ ${label}${label ? " " : ""}`;
     const button = stripTerminalSequences(truncateToWidth(`[${feedback.get(block) ?? "Copy"}]`, buttonWidth));
     const right = gap + " ".repeat(buttonWidth - visibleWidth(button)) + button + " ─╮";
     const header = left + "─".repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right))) + right;
     const start = visibleWidth(header) - 3 - visibleWidth(button);
-    collecting.push({ header, start, end: start + visibleWidth(button), block });
+    // Carry header identity through Pi's wrapping without matching message text.
+    const marker = `${markerPrefix}${collecting.length}\x1b\\`;
+    collecting.push({ marker, start, end: start + visibleWidth(button), block });
     const theme = this.theme;
-    const lines = [theme.codeBlockBorder(header)];
+    const lines = [marker + theme.codeBlockBorder(header)];
     const highlighted = theme.highlightCode?.(code.text, code.lang) ?? code.text.split("\n").map((line) => theme.codeBlock(line));
     for (const line of highlighted) {
       for (const wrapped of wrapTextWithAnsi(line, width - 4)) {
@@ -88,19 +95,20 @@ export function decorateMarkdown(markdown: Markdown, source: string, copy: (code
     const lines = originalRender.call(this, width);
     if (collecting.length) buttons = collecting;
     hits = [];
+    const rendered = [...lines];
     let from = 0;
     for (const button of buttons) {
       for (let row = from; row < lines.length; row++) {
-        const plain = stripTerminalSequences(lines[row]);
-        const index = plain.indexOf(button.header);
+        const index = lines[row].indexOf(button.marker);
         if (index < 0) continue;
-        const offset = visibleWidth(plain.slice(0, index));
+        const offset = visibleWidth(lines[row].slice(0, index));
         hits.push({ row, start: offset + button.start, end: offset + button.end, block: button.block });
+        rendered[row] = rendered[row].replace(button.marker, "");
         from = row + 1;
         break;
       }
     }
-    return lines;
+    return rendered;
   };
 
   target.handleMouse = function (event: TuiMouseEvent) {
