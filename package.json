@@ -1,24 +1,49 @@
 {
   "name": "@nuclear-ant/pi-code-blocks",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "author": "Nuclear Ant",
-  "keywords": ["pi-package", "pi-extension", "code-blocks", "clipboard"],
-  "repository": { "type": "git", "url": "git+https://github.com/nuclear-ant/pi-code-blocks.git" },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "code-blocks",
+    "clipboard"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nuclear-ant/pi-code-blocks.git"
+  },
   "homepage": "https://github.com/nuclear-ant/pi-code-blocks#readme",
-  "bugs": { "url": "https://github.com/nuclear-ant/pi-code-blocks/issues" },
-  "publishConfig": { "access": "public" },
-  "files": ["src/", "README.md", "LICENSE"],
-  "engines": { "node": ">=22.19.0" },
+  "bugs": {
+    "url": "https://github.com/nuclear-ant/pi-code-blocks/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "type": "module",
   "description": "Rendering-only code panels with clipboard buttons for Pi",
-  "pi": { "extensions": ["./src/extension.ts"] },
+  "pi": {
+    "extensions": [
+      "./src/extension.ts"
+    ]
+  },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "check": "tsc --noEmit",
     "prepublishOnly": "npm run check && npm test"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*" },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.0.2",
     "@earendil-works/pi-tui": "1.0.2",
