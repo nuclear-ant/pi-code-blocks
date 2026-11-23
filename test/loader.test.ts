@@ -15,17 +15,24 @@ test("the actual extension loads into Pi's bundled renderer and cleans up on shu
   const notices: string[] = [];
   const context = { mode: "tui", ui: { notify: (message: string) => notices.push(message) } };
   const original = pi.AssistantMessageComponent.prototype.updateContent;
+  let component: InstanceType<typeof pi.AssistantMessageComponent> | undefined;
   for (const handler of extension.handlers.get("session_start") ?? []) await handler({ type: "session_start" } as never, context as never);
   try {
     const plain = (text: string) => text;
     const theme = Object.fromEntries(["heading", "link", "linkUrl", "code", "codeBlock", "codeBlockBorder", "quote", "quoteBorder", "hr", "listBullet", "bold", "italic", "strikethrough", "underline"].map((key) => [key, plain])) as unknown as MarkdownTheme;
-    const component = new pi.AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "```sh\necho hello\n```" }], stopReason: "stop" } as never, false, theme);
+    component = new pi.AssistantMessageComponent({ role: "assistant", content: [{ type: "text", text: "```sh\necho hello\n```" }], stopReason: "stop" } as never, false, theme);
     assert(component.render(50).map(stripTerminalSequences).some((line) => line.includes("[Copy]")));
+    for (let i = 0; i < 32; i++) {
+      component.updateContent({ role: "assistant", content: [{ type: "text", text: `Streaming ${i}\n\n\`\`\`sh\necho ${i}\n\`\`\`` }], stopReason: "stop" } as never, true);
+      assert(component.render(50).map(stripTerminalSequences).some((line) => line.includes(`echo ${i}`)));
+    }
     assert.deepEqual(notices, []);
   } finally {
     for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler({ type: "session_shutdown", reason: "reload" } as never, context as never);
   }
   assert.equal(pi.AssistantMessageComponent.prototype.updateContent, original);
+  assert(component);
+  assert(!component.render(50).map(stripTerminalSequences).some((line) => line.includes("[Copy]")), "shutdown must remove every streaming decoration");
   for (const handler of extension.handlers.get("session_start") ?? []) await handler({ type: "session_start" } as never, { ...context, mode: "print" } as never);
   assert.equal(pi.AssistantMessageComponent.prototype.updateContent, original);
 });

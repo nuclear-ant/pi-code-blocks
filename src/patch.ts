@@ -38,8 +38,10 @@ export function installPanels(copy: (code: string) => void | Promise<void>, onEr
       for (let i = 0; i < markdown.length; i++) {
         const content = text[i];
         if (content.type !== "text") continue;
+        const restore = restores.get(markdown[i]);
+        restore?.();
         restores.set(markdown[i], decorateMarkdown(markdown[i], content.text, copy, repaint));
-        instances.add(new WeakRef(markdown[i]));
+        if (!restore) instances.add(new WeakRef(markdown[i]));
       }
     } catch (error) {
       for (const child of (this.children[0] as Container)?.children ?? []) {
